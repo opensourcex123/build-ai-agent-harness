@@ -1,12 +1,18 @@
 {
-  "name": "${PROJECT_NAME}",
+  "name": "build-ai-agent-harness",
   "version": "1.0.0",
   "description": "",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@ai-sdk/deepseek": "3.0.35",
+    "ai": "^7.0.83",
+    "dotenv": "^17.4.2",
+    "just-bash": "^3.4.2",
+    "zod": "v3"
+  },
   "devDependencies": {
     "typescript": "^5.5.3"
   },
