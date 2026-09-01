@@ -37,7 +37,6 @@ DO NOT USE FOR: running commands, listing directories.`,
                 : numbered.join("\n");
         },
     });
-
     const grep = tool({
         description: `Search file contents using regex. Returns matching lines with file paths.
 WHEN TO USE: finding patterns across multiple files, locating function definitions,
@@ -84,6 +83,7 @@ EXAMPLES:
             }
         },
     });
+
     const agent = new ToolLoopAgent({
         model: deepseek("deepseek-v4-flash"),
         instructions: `You are a coding agent.\nWorking directory: ${cwd}`,
