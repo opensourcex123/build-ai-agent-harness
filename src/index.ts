@@ -6,6 +6,10 @@ import { resolve } from "node:path";
 import { readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
 
+interface BashOperations {
+    exec(command: string): Promise<{ stdout: string; exitCode: number }>;
+}
+
 const SAFE_PREFIXES = [
     "ls", "cat", "echo", "pwd", "which", "find",
     "head", "tail", "wc", "git log", "git status", "git diff",
