@@ -12,7 +12,8 @@ const run = async () => {
     const read = tool({
         description: `Read a file from the project. Returns numbered lines.
 WHEN TO USE: viewing file contents, checking configs, reading source code.
-WHEN NOT TO USE: searching across files (use grep instead).`,
+WHEN NOT TO USE: searching across files (use grep instead).
+DO NOT USE FOR: running commands, listing directories.`,
         inputSchema: z.object({
             path: z.string().describe("File path relative to working directory"),
             offset: z.number().optional().describe("Start line (1-indexed)"),
@@ -37,10 +38,56 @@ WHEN NOT TO USE: searching across files (use grep instead).`,
         },
     });
 
+    const grep = tool({
+        description: `Search file contents using regex. Returns matching lines with file paths.
+WHEN TO USE: finding patterns across multiple files, locating function definitions,
+  searching for imports, finding TODOs or error messages.
+WHEN NOT TO USE: reading a known file (use read instead).
+DO NOT USE FOR: running commands, listing directories.
+EXAMPLES:
+  - Find all TODO comments: pattern "TODO" glob "*.ts"
+  - Find function definitions: pattern "function \\\\w+" glob "*.ts"`,
+        inputSchema: z.object({
+            pattern: z.string().describe("Regex pattern to search for"),
+            path: z.string().optional().describe("Directory to search (default: working dir)"),
+            glob: z.string().optional().describe("File glob filter, e.g. '*.ts'"),
+        }),
+        execute: async ({ pattern, path: searchPath, glob: globFilter }) => {
+            const dir = resolve(cwd, searchPath || ".");
+            const escapedPattern = pattern.replace(/'/g, `'\\''`);
+            const escapedGlob = (globFilter || "*").replace(/'/g, `'\\''`);
+            const cmd = `grep -rn --exclude-dir=node_modules --exclude-dir=.git --include='${escapedGlob}' -E '${escapedPattern}' '${dir}' 2>/dev/null`;
+
+            try {
+                const stdout = execSync(cmd, { encoding: "utf-8", timeout: 10_000 });
+                const lines = stdout.trim().split("\\n").filter(Boolean);
+
+                const MAX_MATCHES = 50;
+                const truncated = lines.length > MAX_MATCHES;
+                const result = truncated ? lines.slice(0, MAX_MATCHES) : lines;
+
+                return truncated
+                    ? result.join("\\n") + `\\n... (${lines.length} total, showing first ${MAX_MATCHES})`
+                    : result.join("\\n") || "No matches found.";
+            } catch (error: any) {
+                const stdout = String(error?.stdout || "").trim();
+                if (stdout) {
+                    const lines = stdout.split("\\n").filter(Boolean);
+                    const MAX_MATCHES = 50;
+                    const truncated = lines.length > MAX_MATCHES;
+                    const result = truncated ? lines.slice(0, MAX_MATCHES) : lines;
+                    return truncated
+                        ? result.join("\\n") + `\\n... (${lines.length} total, showing first ${MAX_MATCHES})`
+                        : result.join("\\n");
+                }
+                return "No matches found.";
+            }
+        },
+    });
     const agent = new ToolLoopAgent({
         model: deepseek("deepseek-v4-flash"),
         instructions: `You are a coding agent.\nWorking directory: ${cwd}`,
-        tools: {read},
+        tools: {read, grep},
         stopWhen: stepCountIs(10),
     });
 
