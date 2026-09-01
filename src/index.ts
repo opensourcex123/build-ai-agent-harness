@@ -1,27 +1,52 @@
-import {ToolLoopAgent, stepCountIs, tool} from "ai";
-import 'dotenv/config';
+import { ToolLoopAgent, stepCountIs, tool } from "ai";
+import "dotenv/config";
 import { deepseek } from "@ai-sdk/deepseek";
-import {z} from "zod";
+import { z } from "zod";
 import { resolve } from "node:path";
 import { readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
 
 interface BashOperations {
-    exec(command: string): Promise<{ stdout: string; exitCode: number }>;
+  exec(command: string): Promise<{ stdout: string; exitCode: number }>;
 }
 
+type ApprovalConfig =
+  | { mode: "interactive" }
+  | { mode: "background" }
+  | { mode: "delegated"; trust: string[] };
+
 const SAFE_PREFIXES = [
-    "ls", "cat", "echo", "pwd", "which", "find",
-    "head", "tail", "wc", "git log", "git status", "git diff",
+  "ls",
+  "cat",
+  "echo",
+  "pwd",
+  "which",
+  "find",
+  "head",
+  "tail",
+  "wc",
+  "git log",
+  "git status",
+  "git diff",
 ];
 
-function createBashTool(operations: BashOperations, safePrefixes: string[]) {
-    function isSafe(command: string): boolean {
-        return safePrefixes.some((p) => command.trim().startsWith(p));
+function createApproval(config: ApprovalConfig) {
+  return ({ command }: { command: string }) => {
+    if (config.mode === "background") return false;
+
+    if (config.mode === "delegated") {
+      return !config.trust.some((p) => command.trim().startsWith(p));
     }
 
-    return tool({
-        description: `Execute a shell command in the working directory.
+    return !SAFE_PREFIXES.some((p) => command.trim().startsWith(p));
+  };
+}
+function createBashTool(
+  operations: BashOperations,
+  needApproval: (input: { command: string }) => boolean,
+) {
+  return tool({
+    description: `Execute a shell command in the working directory.
  
 WHEN TO USE: running build commands, installing packages, running tests,
   git operations, directory listings.
@@ -33,43 +58,43 @@ DO NOT USE FOR: reading files (use read), searching code (use grep).
  
 USAGE: command is a single shell string. Commands not in the safe-prefix
   allowlist are blocked and return a clear error message.`,
-        inputSchema: z.object({
-            command: z.string().describe("Shell command to execute"),
-        }),
-        execute: async ({ command }) => {
-            if (!isSafe(command)) {
-                return `Blocked: "${command}" requires approval.`;
-            }
-            const { stdout } = await operations.exec(command);
-            return stdout || "(no output)";
-        },
-    });
+    inputSchema: z.object({
+      command: z.string().describe("Shell command to execute"),
+    }),
+    execute: async ({ command }) => {
+      if (needApproval({ command })) {
+        return `Blocked: "${command}" requires approval.`;
+      }
+      const { stdout } = await operations.exec(command);
+      return stdout || "(no output)";
+    },
+  });
 }
 
 const run = async () => {
-    const cwd = process.argv[2] || process.cwd();
-    console.log(cwd)
+  const cwd = process.argv[2] || process.cwd();
+  console.log(cwd);
 
-    const localOps: BashOperations = {
-        exec: async (command) => {
-            try {
-                const stdout = execSync(command, {
-                    cwd,
-                    encoding: "utf-8",
-                    timeout: 30_000,
-                });
-                return { stdout, exitCode: 0 };
-            } catch (e: any) {
-                return {
-                    stdout: e.stdout || e.stderr || e.message || "",
-                    exitCode: e.status ?? 1,
-                };
-            }
-        },
-    };
+  const localOps: BashOperations = {
+    exec: async (command) => {
+      try {
+        const stdout = execSync(command, {
+          cwd,
+          encoding: "utf-8",
+          timeout: 30_000,
+        });
+        return { stdout, exitCode: 0 };
+      } catch (e: any) {
+        return {
+          stdout: e.stdout || e.stderr || e.message || "",
+          exitCode: e.status ?? 1,
+        };
+      }
+    },
+  };
 
-    const read = tool({
-        description: `Read a file from the project. Returns numbered lines.
+  const read = tool({
+    description: `Read a file from the project. Returns numbered lines.
  
 WHEN TO USE: viewing file contents, checking configurations, reading source code,
   examining specific lines with offset/limit.
@@ -82,31 +107,31 @@ DO NOT USE FOR: searching code (use grep), executing commands (use bash),
  
 USAGE: path is relative to working directory. offset and limit are optional.
   Output is capped at 500 lines.`,
-        inputSchema: z.object({
-            path: z.string().describe("File path relative to working directory"),
-            offset: z.number().optional().describe("Start line (1-indexed)"),
-            limit: z.number().optional().describe("Max lines to return"),
-        }),
-        execute: async ({ path: filePath, offset, limit }) => {
-            const abs = resolve(cwd, filePath);
-            const content = readFileSync(abs, "utf-8");
-            let lines = content.split("\n");
+    inputSchema: z.object({
+      path: z.string().describe("File path relative to working directory"),
+      offset: z.number().optional().describe("Start line (1-indexed)"),
+      limit: z.number().optional().describe("Max lines to return"),
+    }),
+    execute: async ({ path: filePath, offset, limit }) => {
+      const abs = resolve(cwd, filePath);
+      const content = readFileSync(abs, "utf-8");
+      let lines = content.split("\n");
 
-            if (offset) lines = lines.slice(offset - 1);
-            if (limit) lines = lines.slice(0, limit);
+      if (offset) lines = lines.slice(offset - 1);
+      if (limit) lines = lines.slice(0, limit);
 
-            const MAX_LINES = 500;
-            const truncated = lines.length > MAX_LINES;
-            if (truncated) lines = lines.slice(0, MAX_LINES);
+      const MAX_LINES = 500;
+      const truncated = lines.length > MAX_LINES;
+      if (truncated) lines = lines.slice(0, MAX_LINES);
 
-            const numbered = lines.map((l, i) => `${(offset || 1) + i}: ${l}`);
-            return truncated
-                ? numbered.join("\n") + `\n... (truncated at ${MAX_LINES} lines)`
-                : numbered.join("\n");
-        },
-    });
-    const grep = tool({
-        description: `Search file contents using regex. Returns matching lines with file paths.
+      const numbered = lines.map((l, i) => `${(offset || 1) + i}: ${l}`);
+      return truncated
+        ? numbered.join("\n") + `\n... (truncated at ${MAX_LINES} lines)`
+        : numbered.join("\n");
+    },
+  });
+  const grep = tool({
+    description: `Search file contents using regex. Returns matching lines with file paths.
  
 WHEN TO USE: finding patterns across multiple files, locating function definitions,
   searching for imports, finding TODOs or error messages.
@@ -124,56 +149,72 @@ EXAMPLES:
   - Find all TODO comments: pattern "TODO" glob "*.ts"
   - Find function definitions: pattern "function \\\\w+" glob "*.ts"
   - Find imports of a package: pattern "from 'express'" glob "*.ts"`,
-        inputSchema: z.object({
-            pattern: z.string().describe("Regex pattern to search for"),
-            path: z.string().optional().describe("Directory to search (default: working dir)"),
-            glob: z.string().optional().describe("File glob filter, e.g. '*.ts'"),
-        }),
-        execute: async ({ pattern, path: searchPath, glob: globFilter }) => {
-            const dir = resolve(cwd, searchPath || ".");
-            const escapedPattern = pattern.replace(/'/g, `'\\''`);
-            const escapedGlob = (globFilter || "*").replace(/'/g, `'\\''`);
-            const cmd = `grep -rn --exclude-dir=node_modules --exclude-dir=.git --include='${escapedGlob}' -E '${escapedPattern}' '${dir}' 2>/dev/null`;
+    inputSchema: z.object({
+      pattern: z.string().describe("Regex pattern to search for"),
+      path: z
+        .string()
+        .optional()
+        .describe("Directory to search (default: working dir)"),
+      glob: z.string().optional().describe("File glob filter, e.g. '*.ts'"),
+    }),
+    execute: async ({ pattern, path: searchPath, glob: globFilter }) => {
+      const dir = resolve(cwd, searchPath || ".");
+      const escapedPattern = pattern.replace(/'/g, `'\\''`);
+      const escapedGlob = (globFilter || "*").replace(/'/g, `'\\''`);
+      const cmd = `grep -rn --exclude-dir=node_modules --exclude-dir=.git --include='${escapedGlob}' -E '${escapedPattern}' '${dir}' 2>/dev/null`;
 
-            try {
-                const stdout = execSync(cmd, { encoding: "utf-8", timeout: 10_000 });
-                const lines = stdout.trim().split("\\n").filter(Boolean);
+      try {
+        const stdout = execSync(cmd, { encoding: "utf-8", timeout: 10_000 });
+        const lines = stdout.trim().split("\\n").filter(Boolean);
 
-                const MAX_MATCHES = 50;
-                const truncated = lines.length > MAX_MATCHES;
-                const result = truncated ? lines.slice(0, MAX_MATCHES) : lines;
+        const MAX_MATCHES = 50;
+        const truncated = lines.length > MAX_MATCHES;
+        const result = truncated ? lines.slice(0, MAX_MATCHES) : lines;
 
-                return truncated
-                    ? result.join("\\n") + `\\n... (${lines.length} total, showing first ${MAX_MATCHES})`
-                    : result.join("\\n") || "No matches found.";
-            } catch (error: any) {
-                const stdout = String(error?.stdout || "").trim();
-                if (stdout) {
-                    const lines = stdout.split("\\n").filter(Boolean);
-                    const MAX_MATCHES = 50;
-                    const truncated = lines.length > MAX_MATCHES;
-                    const result = truncated ? lines.slice(0, MAX_MATCHES) : lines;
-                    return truncated
-                        ? result.join("\\n") + `\\n... (${lines.length} total, showing first ${MAX_MATCHES})`
-                        : result.join("\\n");
-                }
-                return "No matches found.";
-            }
-        },
-    });
-    const bash = createBashTool(localOps, SAFE_PREFIXES);
+        return truncated
+          ? result.join("\\n") +
+              `\\n... (${lines.length} total, showing first ${MAX_MATCHES})`
+          : result.join("\\n") || "No matches found.";
+      } catch (error: any) {
+        const stdout = String(error?.stdout || "").trim();
+        if (stdout) {
+          const lines = stdout.split("\\n").filter(Boolean);
+          const MAX_MATCHES = 50;
+          const truncated = lines.length > MAX_MATCHES;
+          const result = truncated ? lines.slice(0, MAX_MATCHES) : lines;
+          return truncated
+            ? result.join("\\n") +
+                `\\n... (${lines.length} total, showing first ${MAX_MATCHES})`
+            : result.join("\\n");
+        }
+        return "No matches found.";
+      }
+    },
+  });
+  const interactiveBash = createBashTool(
+    localOps,
+    createApproval({ mode: "interactive" }),
+  );
+  const backgroundBash = createBashTool(
+    localOps,
+    createApproval({ mode: "background" }),
+  );
+  const delegatedBash = createBashTool(
+    localOps,
+    createApproval({ mode: "delegated", trust: SAFE_PREFIXES }),
+  );
 
-    const agent = new ToolLoopAgent({
-        model: deepseek("deepseek-v4-flash"),
-        instructions: `You are a coding agent.\nWorking directory: ${cwd}`,
-        tools: {read, grep, bash},
-        stopWhen: stepCountIs(10),
-    });
+  const agent = new ToolLoopAgent({
+    model: deepseek("deepseek-v4-flash"),
+    instructions: `You are a coding agent.\nWorking directory: ${cwd}`,
+    tools: { read, grep, interactiveBash },
+    stopWhen: stepCountIs(10),
+  });
 
-    const prompt = process.argv.slice(3).join(" ") || "Hello!";
-    const { text, steps } = await agent.generate({ prompt });
-    console.log(text);
-    console.log(`\n(${steps.length} steps)`);
-}
+  const prompt = process.argv.slice(3).join(" ") || "Hello!";
+  const { text, steps } = await agent.generate({ prompt });
+  console.log(text);
+  console.log(`\n(${steps.length} steps)`);
+};
 
-run()
+run();

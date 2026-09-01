@@ -12,6 +12,7 @@
     "ai": "^7.0.83",
     "dotenv": "^17.4.2",
     "just-bash": "^3.4.2",
+    "prettier": "^3.9.6",
     "zod": "v3"
   },
   "devDependencies": {
