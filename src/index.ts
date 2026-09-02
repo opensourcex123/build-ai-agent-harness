@@ -73,14 +73,14 @@ USAGE: command is a single shell string. Commands not in the safe-prefix
 }
 
 const run = async () => {
-  const cwd = process.argv[2] || process.cwd();
-  console.log(cwd);
+  const workingDir = process.argv[2] || process.cwd();
+  console.log(workingDir);
 
   const localOps: BashOperations = {
     exec: async (command) => {
       try {
         const stdout = execSync(command, {
-          cwd,
+          workingDir,
           encoding: "utf-8",
           timeout: 30_000,
         });
@@ -114,7 +114,7 @@ USAGE: path is relative to working directory. offset and limit are optional.
       limit: z.number().optional().describe("Max lines to return"),
     }),
     execute: async ({ path: filePath, offset, limit }) => {
-      const abs = resolve(cwd, filePath);
+      const abs = resolve(workingDir, filePath);
       const content = readFileSync(abs, "utf-8");
       let lines = content.split("\n");
 
@@ -159,7 +159,7 @@ EXAMPLES:
       glob: z.string().optional().describe("File glob filter, e.g. '*.ts'"),
     }),
     execute: async ({ pattern, path: searchPath, glob: globFilter }) => {
-      const dir = resolve(cwd, searchPath || ".");
+      const dir = resolve(workingDir, searchPath || ".");
       const escapedPattern = pattern.replace(/'/g, `'\\''`);
       const escapedGlob = (globFilter || "*").replace(/'/g, `'\\''`);
       const cmd = `grep -rn --exclude-dir=node_modules --exclude-dir=.git --include='${escapedGlob}' -E '${escapedPattern}' '${dir}' 2>/dev/null`;
@@ -206,7 +206,7 @@ EXAMPLES:
   );
 
   const instructions = buildSystemPrompt({
-    workingDirectory: cwd,
+    workingDirectory: workingDir,
     sandboxType: "local",
     toolNames: Object.keys({ read, grep, interactiveBash }),
   });
@@ -215,7 +215,7 @@ EXAMPLES:
     model: deepseek("deepseek-v4-flash"),
     instructions,
     tools: { read, grep, interactiveBash },
-    stopWhen: stepCountIs(10),
+    stopWhen: stepCountIs(20),
   });
 
   const prompt = process.argv.slice(3).join(" ") || "Hello!";
