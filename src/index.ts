@@ -2,8 +2,8 @@ import { ToolLoopAgent, stepCountIs, tool } from "ai";
 import "dotenv/config";
 import { deepseek } from "@ai-sdk/deepseek";
 import { z } from "zod";
-import { resolve } from "node:path";
-import { readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { buildSystemPrompt } from "./system";
 
@@ -75,6 +75,11 @@ USAGE: command is a single shell string. Commands not in the safe-prefix
 const run = async () => {
   const workingDir = process.argv[2] || process.cwd();
   console.log(workingDir);
+
+  const agentsPath = join(workingDir, "AGENTS.md");
+  const projectContext = existsSync(agentsPath)
+    ? readFileSync(agentsPath, "utf-8")
+    : undefined;
 
   const localOps: BashOperations = {
     exec: async (command) => {
@@ -209,6 +214,7 @@ EXAMPLES:
     workingDirectory: workingDir,
     sandboxType: "local",
     toolNames: Object.keys({ read, grep, interactiveBash }),
+    projectContext,
   });
 
   const agent = new ToolLoopAgent({
