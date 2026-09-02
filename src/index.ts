@@ -5,6 +5,7 @@ import { z } from "zod";
 import { resolve } from "node:path";
 import { readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
+import { buildSystemPrompt } from "./system";
 
 interface BashOperations {
   exec(command: string): Promise<{ stdout: string; exitCode: number }>;
@@ -204,20 +205,15 @@ EXAMPLES:
     createApproval({ mode: "delegated", trust: SAFE_PREFIXES }),
   );
 
+  const instructions = buildSystemPrompt({
+    workingDirectory: cwd,
+    sandboxType: "local",
+    toolNames: Object.keys({ read, grep, interactiveBash }),
+  });
+
   const agent = new ToolLoopAgent({
     model: deepseek("deepseek-v4-flash"),
-    instructions: `You are a coding agent working in: ${cwd}
- 
-# Agency
-- USE your tools. Read files, search code, run commands, then answer.
-- Do NOT explain what you WOULD do. Actually do it.
-- Prefer grep for searching, read for viewing files.
-- Use bash only for commands that aren't covered by other tools.
- 
-# Guardrails
-- Prefer simple, minimal changes
-- Search before creating, and reuse existing patterns
-- No new dependencies without asking`,
+    instructions,
     tools: { read, grep, interactiveBash },
     stopWhen: stepCountIs(10),
   });
