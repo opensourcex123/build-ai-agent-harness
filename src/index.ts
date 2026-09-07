@@ -6,6 +6,7 @@ import { join, resolve } from "node:path";
 import { existsSync, readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { buildSystemPrompt } from "./system";
+import { createBashTool, createReadTool } from "./tools";
 
 interface BashOperations {
   exec(command: string): Promise<{ stdout: string; exitCode: number }>;
@@ -42,35 +43,6 @@ function createApproval(config: ApprovalConfig) {
     return !SAFE_PREFIXES.some((p) => command.trim().startsWith(p));
   };
 }
-function createBashTool(
-  operations: BashOperations,
-  needApproval: (input: { command: string }) => boolean,
-) {
-  return tool({
-    description: `Execute a shell command in the working directory.
- 
-WHEN TO USE: running build commands, installing packages, running tests,
-  git operations, directory listings.
- 
-WHEN NOT TO USE: reading file contents (use read instead).
-  Searching for patterns (use grep instead).
- 
-DO NOT USE FOR: reading files (use read), searching code (use grep).
- 
-USAGE: command is a single shell string. Commands not in the safe-prefix
-  allowlist are blocked and return a clear error message.`,
-    inputSchema: z.object({
-      command: z.string().describe("Shell command to execute"),
-    }),
-    execute: async ({ command }) => {
-      if (needApproval({ command })) {
-        return `Blocked: "${command}" requires approval.`;
-      }
-      const { stdout } = await operations.exec(command);
-      return stdout || "(no output)";
-    },
-  });
-}
 
 const run = async () => {
   const workingDir = process.argv[2] || process.cwd();
@@ -99,43 +71,7 @@ const run = async () => {
     },
   };
 
-  const read = tool({
-    description: `Read a file from the project. Returns numbered lines.
- 
-WHEN TO USE: viewing file contents, checking configurations, reading source code,
-  examining specific lines with offset/limit.
- 
-WHEN NOT TO USE: searching for patterns across files (use grep instead).
-  Running commands (use bash instead).
- 
-DO NOT USE FOR: searching code (use grep), executing commands (use bash),
-  modifying files (use edit or write).
- 
-USAGE: path is relative to working directory. offset and limit are optional.
-  Output is capped at 500 lines.`,
-    inputSchema: z.object({
-      path: z.string().describe("File path relative to working directory"),
-      offset: z.number().optional().describe("Start line (1-indexed)"),
-      limit: z.number().optional().describe("Max lines to return"),
-    }),
-    execute: async ({ path: filePath, offset, limit }) => {
-      const abs = resolve(workingDir, filePath);
-      const content = readFileSync(abs, "utf-8");
-      let lines = content.split("\n");
-
-      if (offset) lines = lines.slice(offset - 1);
-      if (limit) lines = lines.slice(0, limit);
-
-      const MAX_LINES = 500;
-      const truncated = lines.length > MAX_LINES;
-      if (truncated) lines = lines.slice(0, MAX_LINES);
-
-      const numbered = lines.map((l, i) => `${(offset || 1) + i}: ${l}`);
-      return truncated
-        ? numbered.join("\n") + `\n... (truncated at ${MAX_LINES} lines)`
-        : numbered.join("\n");
-    },
-  });
+  const read = createReadTool();
   const grep = tool({
     description: `Search file contents using regex. Returns matching lines with file paths.
  
