@@ -1,17 +1,13 @@
-import { ToolLoopAgent, stepCountIs, tool } from "ai";
+import { ToolLoopAgent, stepCountIs } from "ai";
 import "dotenv/config";
 import { deepseek } from "@ai-sdk/deepseek";
-import { z } from "zod";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { existsSync, readFileSync } from "node:fs";
-import { execSync } from "node:child_process";
 import { buildSystemPrompt } from "./system";
 import { createBashTool, createGrepTool, createReadTool } from "./tools";
 import { createLocalSandbox } from "./sandbox-local";
-
-interface BashOperations {
-  exec(command: string): Promise<{ stdout: string; exitCode: number }>;
-}
+import { Sandbox } from "./sandbox";
+import { createJustBashSandbox } from "./sandbox-just-bash";
 
 type ApprovalConfig =
   | { mode: "interactive" }
@@ -54,7 +50,11 @@ const run = async () => {
     ? readFileSync(agentsPath, "utf-8")
     : undefined;
 
-  const sandbox = createLocalSandbox(workingDir);
+  const sandboxType = process.env.SANDBOX || "local";
+  const sandbox =
+    sandboxType === "just-bash"
+      ? await createJustBashSandbox(workingDir)
+      : createLocalSandbox(workingDir);
   console.error(`Sandbox: ${sandbox.type}`);
 
   const read = createReadTool(sandbox);

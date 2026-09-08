@@ -2,7 +2,6 @@ import { Sandbox } from "./sandbox";
 import { tool } from "ai";
 import { z } from "zod";
 import { resolve } from "node:path";
-import { execSync } from "node:child_process";
 
 export function createReadTool(sandbox: Sandbox) {
   return tool({
@@ -25,8 +24,7 @@ USAGE: path is relative to working directory. offset and limit are optional.
       limit: z.number().optional().describe("Max lines to return"),
     }),
     execute: async ({ path: filePath, offset, limit }) => {
-      const abs = resolve(workingDir, filePath);
-      const content = await sandbox.readFile(abs);
+      const content = await sandbox.readFile(filePath);
       let lines = content.split("\n");
 
       if (offset) lines = lines.slice(offset - 1);
