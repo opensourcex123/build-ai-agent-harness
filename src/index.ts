@@ -6,7 +6,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { buildSystemPrompt } from "./system";
 import { createBashTool, createGrepTool, createReadTool } from "./tools";
 import { createLocalSandbox } from "./sandbox-local";
-import { Sandbox } from "./sandbox";
+import { SandboxLifecycle } from "./sandbox";
 import { createJustBashSandbox } from "./sandbox-just-bash";
 
 type ApprovalConfig =
@@ -55,7 +55,15 @@ const run = async () => {
     sandboxType === "just-bash"
       ? await createJustBashSandbox(workingDir)
       : createLocalSandbox(workingDir);
+  const lifecycle: SandboxLifecycle = {
+    afterStart: async (sb) =>
+      console.error(`[lifecycle] after start: ${sb.type}`),
+    beforeStop: async (sb) =>
+      console.error(`[lifecycle] before stop: ${sb.type}`),
+  };
   console.error(`Sandbox: ${sandbox.type}`);
+
+  await lifecycle.afterStart?.(sandbox);
 
   const read = createReadTool(sandbox);
   const grep = createGrepTool(sandbox);
@@ -87,9 +95,15 @@ const run = async () => {
   });
 
   const prompt = process.argv.slice(3).join(" ") || "Hello!";
-  const { text, steps } = await agent.generate({ prompt });
-  console.log(text);
-  console.log(`\n(${steps.length} steps)`);
+
+  try {
+    const { text, steps } = await agent.generate({ prompt });
+    console.log(text);
+    console.log(`\n(${steps.length} steps)`);
+  } finally {
+    await lifecycle.beforeStop?.(sandbox);
+    await sandbox.stop();
+  }
 };
 
 run();
