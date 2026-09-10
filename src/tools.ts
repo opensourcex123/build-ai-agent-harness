@@ -3,6 +3,8 @@ import { tool } from "ai";
 import { z } from "zod";
 import { resolve } from "node:path";
 
+const MAX_BASH_CHARS = 5000;
+
 export function createReadTool(sandbox: Sandbox) {
   return tool({
     description: `Read a file from the project. Returns numbered lines.
@@ -134,7 +136,13 @@ USAGE: command is a single shell string. Commands not in the safe-prefix
         return `Blocked: "${command}" requires approval.`;
       }
       const { stdout } = await sandbox.exec(command);
-      return stdout || "(no output)";
+
+      const handleStdout = stdout || "(no output)";
+
+      return handleStdout.length > MAX_BASH_CHARS
+        ? handleStdout.slice(-MAX_BASH_CHARS) +
+            `\n... (truncated, showing last ${MAX_BASH_CHARS} chars)`
+        : handleStdout;
     },
   });
 }
