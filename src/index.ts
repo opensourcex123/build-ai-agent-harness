@@ -1,4 +1,4 @@
-import { ToolLoopAgent, stepCountIs } from "ai";
+import { ToolLoopAgent, stepCountIs, pruneMessages } from "ai";
 import "dotenv/config";
 import { deepseek } from "@ai-sdk/deepseek";
 import { join } from "node:path";
@@ -91,7 +91,16 @@ const run = async () => {
     model: deepseek("deepseek-v4-flash"),
     instructions,
     tools: { read, grep, interactiveBash },
-    stopWhen: stepCountIs(20),
+    stopWhen: stepCountIs(10),
+    prepareCall: async (options) => ({
+      ...options,
+      messages: options.messages
+        ? pruneMessages({
+            messages: options.messages,
+            toolCalls: "before-last-3-messages",
+          })
+        : undefined,
+    }),
     onStepEnd: ({ usage, stepNumber }) => {
       console.error(
         `Step ${stepNumber}: ${usage.inputTokens} input, ${usage.outputTokens} output`,
