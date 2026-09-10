@@ -88,7 +88,7 @@ const run = async () => {
   });
 
   const agent = new ToolLoopAgent({
-    model: deepseek("deepseek-v4-flash"),
+    model: deepseek("deepseek-flash"),
     instructions,
     tools: { read, grep, interactiveBash },
     stopWhen: stepCountIs(10),
