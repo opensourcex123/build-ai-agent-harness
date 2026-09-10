@@ -8,6 +8,7 @@ import { createBashTool, createGrepTool, createReadTool } from "./tools";
 import { createLocalSandbox } from "./sandbox-local";
 import { SandboxLifecycle } from "./sandbox";
 import { createJustBashSandbox } from "./sandbox-just-bash";
+import { addCacheControl } from "./cache";
 
 type ApprovalConfig =
   | { mode: "interactive" }
@@ -92,15 +93,19 @@ const run = async () => {
     instructions,
     tools: { read, grep, interactiveBash },
     stopWhen: stepCountIs(10),
-    prepareCall: async (options) => ({
-      ...options,
-      messages: options.messages
+    prepareCall: async (options) => {
+      const pruned = options.messages
         ? pruneMessages({
             messages: options.messages,
             toolCalls: "before-last-3-messages",
           })
-        : undefined,
-    }),
+        : undefined;
+
+      return {
+        ...options,
+        messages: pruned ? addCacheControl(pruned) : undefined,
+      };
+    },
     onStepEnd: ({ usage, stepNumber }) => {
       console.error(
         `Step ${stepNumber}: ${usage.inputTokens} input, ${usage.outputTokens} output`,
