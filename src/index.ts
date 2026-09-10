@@ -92,6 +92,11 @@ const run = async () => {
     instructions,
     tools: { read, grep, interactiveBash },
     stopWhen: stepCountIs(20),
+    onStepEnd: ({ usage, stepNumber }) => {
+      console.error(
+        `Step ${stepNumber}: ${usage.inputTokens} input, ${usage.outputTokens} output`,
+      );
+    },
   });
 
   const prompt = process.argv.slice(3).join(" ") || "Hello!";
