@@ -4,6 +4,7 @@ import { z } from "zod";
 import { resolve } from "node:path";
 import { deepseek } from "@ai-sdk/deepseek";
 import { addCacheControl } from "./cache";
+import { createApproval } from "./index";
 
 const MAX_BASH_CHARS = 5000;
 
@@ -164,8 +165,43 @@ WHEN NOT TO USE: making changes (the subagent cannot write or run commands).
 DO NOT USE FOR: tasks that need decisions or askUser interactions.`,
     inputSchema: z.object({
       description: z.string().describe("What the subagent should investigate"),
+      subagentType: z
+        .enum(["explorer", "executor"])
+        .default("explorer")
+        .describe("Subagent role"),
     }),
-    execute: async ({ description }) => {
+    execute: async ({ description, subagentType }) => {
+      if (subagentType == "executor") {
+        const executorBash = createBashTool(
+          sandbox,
+          createApproval({
+            mode: "delegated",
+            trust: ["npm test", "npm run build", "npx tsc"],
+          }),
+        );
+        const executor = new ToolLoopAgent({
+          model: deepseek("deepseek-v4-pro"),
+          instructions: `You are an executor agent. Follow instructions precisely.
+Working directory: ${sandbox.workingDirectory}`,
+          tools: {
+            read: parentTools.read,
+            grep: parentTools.grep,
+            bash: executorBash,
+          },
+          stopWhen: stepCountIs(15),
+        });
+
+        const prompt = description || "Hello!";
+
+        try {
+          const { text, steps } = await executor.generate({ prompt });
+          return text
+            ? `[Executor: ${steps.length} steps]\n${text}`
+            : "(no response from subagent)";
+        } catch (e: any) {
+          return `Subagent error: ${e.message}`;
+        }
+      }
       const explorer = new ToolLoopAgent({
         model: deepseek("deepseek-flash"),
         instructions: `You are an explorer agent. Investigate and report back concisely.

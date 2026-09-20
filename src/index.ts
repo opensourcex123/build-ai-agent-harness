@@ -35,7 +35,7 @@ const SAFE_PREFIXES = [
   "git diff",
 ];
 
-function createApproval(config: ApprovalConfig) {
+export function createApproval(config: ApprovalConfig) {
   return ({ command }: { command: string }) => {
     if (config.mode === "background") return false;
 
