@@ -4,7 +4,12 @@ import { deepseek } from "@ai-sdk/deepseek";
 import { join } from "node:path";
 import { existsSync, readFileSync } from "node:fs";
 import { buildSystemPrompt } from "./system";
-import { createBashTool, createGrepTool, createReadTool } from "./tools";
+import {
+  createBashTool,
+  createGrepTool,
+  createReadTool,
+  createTaskTool,
+} from "./tools";
 import { createLocalSandbox } from "./sandbox-local";
 import { SandboxLifecycle } from "./sandbox";
 import { createJustBashSandbox } from "./sandbox-just-bash";
@@ -80,6 +85,7 @@ const run = async () => {
     sandbox,
     createApproval({ mode: "delegated", trust: SAFE_PREFIXES }),
   );
+  const task = createTaskTool(sandbox, { read: read, grep: grep });
 
   const instructions = buildSystemPrompt({
     workingDirectory: workingDir,
@@ -91,7 +97,7 @@ const run = async () => {
   const agent = new ToolLoopAgent({
     model: deepseek("deepseek-flash"),
     instructions,
-    tools: { read, grep, interactiveBash },
+    tools: { read, grep, interactiveBash, task },
     stopWhen: stepCountIs(10),
     prepareCall: async (options) => {
       const pruned = options.messages
