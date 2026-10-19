@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { existsSync, readFileSync } from "node:fs";
 import { buildSystemPrompt } from "./system";
 import {
+  createAskUserTool,
   createBashTool,
   createGrepTool,
   createReadTool,
@@ -86,6 +87,7 @@ const run = async () => {
     createApproval({ mode: "delegated", trust: SAFE_PREFIXES }),
   );
   const task = createTaskTool(sandbox, { read: read, grep: grep });
+  const askUser = createAskUserTool(sandbox);
 
   const instructions = buildSystemPrompt({
     workingDirectory: workingDir,
