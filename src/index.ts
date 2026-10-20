@@ -10,6 +10,7 @@ import {
   createGrepTool,
   createReadTool,
   createTaskTool,
+  createTodoTool,
 } from "./tools";
 import { createLocalSandbox } from "./sandbox-local";
 import { SandboxLifecycle } from "./sandbox";
@@ -88,6 +89,7 @@ const run = async () => {
   );
   const task = createTaskTool(sandbox, { read: read, grep: grep });
   const askUser = createAskUserTool(sandbox);
+  const todo = createTodoTool();
 
   const instructions = buildSystemPrompt({
     workingDirectory: workingDir,
@@ -99,7 +101,7 @@ const run = async () => {
   const agent = new ToolLoopAgent({
     model: deepseek("deepseek-flash"),
     instructions,
-    tools: { read, grep, interactiveBash, task },
+    tools: { read, grep, interactiveBash, task, askUser, todo },
     stopWhen: stepCountIs(10),
     prepareCall: async (options) => {
       const pruned = options.messages
