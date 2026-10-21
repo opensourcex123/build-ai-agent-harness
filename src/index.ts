@@ -16,6 +16,7 @@ import { createLocalSandbox } from "./sandbox-local";
 import { SandboxLifecycle } from "./sandbox";
 import { createJustBashSandbox } from "./sandbox-just-bash";
 import { addCacheControl } from "./cache";
+import { discoverGates } from "./verification";
 
 type ApprovalConfig =
   | { mode: "interactive" }
@@ -91,18 +92,20 @@ const run = async () => {
   const askUser = createAskUserTool(sandbox);
   const todo = createTodoTool();
 
+  const verifyCommands = await discoverGates(sandbox);
   const instructions = buildSystemPrompt({
     workingDirectory: workingDir,
     sandboxType: "local",
-    toolNames: Object.keys({ read, grep, interactiveBash }),
+    toolNames: Object.keys({ read, grep, backgroundBash }),
     projectContext,
+    verifyCommands,
   });
 
   const agent = new ToolLoopAgent({
-    model: deepseek("deepseek-flash"),
+    model: deepseek("deepseek-v4-pro"),
     instructions,
-    tools: { read, grep, interactiveBash, task, askUser, todo },
-    stopWhen: stepCountIs(10),
+    tools: { read, grep, backgroundBash, task, askUser, todo },
+    stopWhen: stepCountIs(15),
     prepareCall: async (options) => {
       const pruned = options.messages
         ? pruneMessages({

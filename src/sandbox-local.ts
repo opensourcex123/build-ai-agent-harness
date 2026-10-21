@@ -3,15 +3,15 @@ import { readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { resolve } from "node:path";
 
-export function createLocalSandbox(dir: string): Sandbox {
+export function createLocalSandbox(workingDir: string): Sandbox {
   async function readFile(path: string) {
-    return readFileSync(resolve(dir, path), "utf-8");
+    return readFileSync(resolve(workingDir, path), "utf-8");
   }
 
   async function exec(command: string) {
     try {
       const stdout = execSync(command, {
-        cwd: dir,
+        cwd: workingDir,
         encoding: "utf-8",
         timeout: 30_000,
       });
@@ -28,7 +28,7 @@ export function createLocalSandbox(dir: string): Sandbox {
 
   return {
     type: "local",
-    workingDirectory: dir,
+    workingDirectory: workingDir,
     readFile,
     exec,
     stop,
