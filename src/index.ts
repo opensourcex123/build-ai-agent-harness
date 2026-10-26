@@ -147,9 +147,29 @@ const run = async () => {
   });
 
   try {
-    const { text, steps } = await agent.generate({ prompt });
-    console.log(text);
-    console.log(`\n(${steps.length} steps)`);
+    const result = await agent.stream({ prompt });
+
+    for await (const chunk of result.stream) {
+      switch (chunk.type) {
+        case "text-delta":
+          process.stdout.write(chunk.text);
+          break;
+        case "tool-call":
+          console.error(
+            `\n[tool] ${chunk.toolName}(${JSON.stringify(chunk.input)})`,
+          );
+          break;
+        case "tool-result": {
+          const preview = (
+            typeof chunk.output === "string"
+              ? chunk.output
+              : (JSON.stringify(chunk.output) ?? "(no output)")
+          ).slice(0, 100);
+          console.error(`  -> ${preview}`);
+          break;
+        }
+      }
+    }
   } finally {
     await lifecycle.beforeStop?.(sandbox);
     await sandbox.stop();
