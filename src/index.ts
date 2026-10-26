@@ -1,7 +1,7 @@
 import { ToolLoopAgent, stepCountIs, pruneMessages } from "ai";
 import "dotenv/config";
 import { deepseek } from "@ai-sdk/deepseek";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { existsSync, readFileSync } from "node:fs";
 import { buildSystemPrompt } from "./system";
 import {
@@ -17,6 +17,7 @@ import { SandboxLifecycle } from "./sandbox";
 import { createJustBashSandbox } from "./sandbox-just-bash";
 import { addCacheControl } from "./cache";
 import { discoverGates } from "./verification";
+import { parseArgs } from "node:util";
 
 type ApprovalConfig =
   | { mode: "interactive" }
@@ -51,7 +52,16 @@ export function createApproval(config: ApprovalConfig) {
 }
 
 const run = async () => {
-  const workingDir = process.argv[2] || process.cwd();
+  const { values, positionals } = parseArgs({
+    args: process.argv.slice(2),
+    options: {
+      sandbox: { type: "string", default: "local" },
+      model: { type: "string", default: "deepseek-v4-pro" },
+    },
+    allowPositionals: true,
+  });
+
+  const workingDir = resolve(positionals[0] || process.cwd());
   console.log(workingDir);
 
   const agentsPath = join(workingDir, "AGENTS.md");
@@ -59,18 +69,20 @@ const run = async () => {
     ? readFileSync(agentsPath, "utf-8")
     : undefined;
 
-  const sandboxType = process.env.SANDBOX || "local";
-  const sandbox =
-    sandboxType === "just-bash"
-      ? await createJustBashSandbox(workingDir)
-      : createLocalSandbox(workingDir);
+  async function sandboxFromFlag(name: string, dir: string): Promise<Sandbox> {
+    if (name === "just-bash") return createJustBashSandbox(dir);
+    return createLocalSandbox(dir);
+  }
+
+  const sandbox = await sandboxFromFlag(values.sandbox!, workingDir);
+  console.error(`Sandbox: ${sandbox.type}`);
+
   const lifecycle: SandboxLifecycle = {
     afterStart: async (sb) =>
       console.error(`[lifecycle] after start: ${sb.type}`),
     beforeStop: async (sb) =>
       console.error(`[lifecycle] before stop: ${sb.type}`),
   };
-  console.error(`Sandbox: ${sandbox.type}`);
 
   await lifecycle.afterStart?.(sandbox);
 
@@ -102,7 +114,7 @@ const run = async () => {
   });
 
   const agent = new ToolLoopAgent({
-    model: deepseek("deepseek-v4-pro"),
+    model: deepseek(values.model!),
     instructions,
     tools: { read, grep, backgroundBash, task, askUser, todo },
     stopWhen: stepCountIs(15),
@@ -126,7 +138,13 @@ const run = async () => {
     },
   });
 
-  const prompt = process.argv.slice(3).join(" ") || "Hello!";
+  const prompt = positionals.slice(1).join(" ") || "Hello!";
+
+  process.on("SIGINT", async () => {
+    console.error("\nShutting down...");
+    await sandbox.stop();
+    process.exit(0);
+  });
 
   try {
     const { text, steps } = await agent.generate({ prompt });
