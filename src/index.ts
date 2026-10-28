@@ -8,6 +8,7 @@ import {
   createAskUserTool,
   createBashTool,
   createGrepTool,
+  createLoadSkillTool,
   createReadTool,
   createTaskTool,
   createTodoTool,
@@ -18,6 +19,7 @@ import { createJustBashSandbox } from "./sandbox-just-bash";
 import { addCacheControl } from "./cache";
 import { discoverGates } from "./verification";
 import { parseArgs } from "node:util";
+import { discoverSkills } from "./skill";
 
 type ApprovalConfig =
   | { mode: "interactive" }
@@ -104,6 +106,13 @@ const run = async () => {
   const askUser = createAskUserTool(sandbox);
   const todo = createTodoTool();
 
+  const skillDirs = [
+    join(workingDir, "skills"),
+    join(process.env.HOME ?? "", ".harness", "skills"),
+  ];
+  const skills = discoverSkills(skillDirs);
+  const loadSkillTool = createLoadSkillTool(skills);
+
   const verifyCommands = await discoverGates(sandbox);
   const instructions = buildSystemPrompt({
     workingDirectory: workingDir,
@@ -116,7 +125,7 @@ const run = async () => {
   const agent = new ToolLoopAgent({
     model: deepseek(values.model!),
     instructions,
-    tools: { read, grep, backgroundBash, task, askUser, todo },
+    tools: { read, grep, backgroundBash, task, askUser, todo, loadSkillTool },
     stopWhen: stepCountIs(15),
     prepareCall: async (options) => {
       const pruned = options.messages

@@ -5,6 +5,7 @@ export interface PromptContext {
   gitBranch?: string;
   projectContext?: string;
   verifyCommands?: string[];
+  skills?: { name: string; description: string }[];
 }
 
 export function buildSystemPrompt(ctx: PromptContext): string {
@@ -64,6 +65,16 @@ When the task is ambiguous or has multiple valid approaches:
 Specific tasks (with file paths, line numbers, or precise instructions) do not
 need askUser. Act directly.
   `);
+
+  if (ctx.skills?.length) {
+    const lines = ctx.skills
+      .map((s) => `- ${s.name}: ${s.description}`)
+      .join("\n");
+    sections.push(`
+# Skills
+The following skills are available. Call \`loadSkill\` with the name to get full content.
+${lines}`);
+  }
 
   return sections.join("\n");
 }
