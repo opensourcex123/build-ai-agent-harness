@@ -1,18 +1,9 @@
-import { ToolLoopAgent, stepCountIs, pruneMessages } from "ai";
+import { ToolLoopAgent, stepCountIs, pruneMessages, tool } from "ai";
 import "dotenv/config";
 import { deepseek } from "@ai-sdk/deepseek";
 import { join, resolve } from "node:path";
 import { existsSync, readFileSync } from "node:fs";
 import { buildSystemPrompt } from "./system";
-import {
-  createAskUserTool,
-  createBashTool,
-  createGrepTool,
-  createLoadSkillTool,
-  createReadTool,
-  createTaskTool,
-  createTodoTool,
-} from "./tools";
 import { createLocalSandbox } from "./sandbox-local";
 import { SandboxLifecycle } from "./sandbox";
 import { createJustBashSandbox } from "./sandbox-just-bash";
@@ -20,26 +11,13 @@ import { addCacheControl } from "./cache";
 import { discoverGates } from "./verification";
 import { parseArgs } from "node:util";
 import { discoverSkills } from "./skill";
+import { createRegistry, registerBuiltins, wrapTool } from "./registry";
+import { z } from "zod";
 
 type ApprovalConfig =
   | { mode: "interactive" }
   | { mode: "background" }
   | { mode: "delegated"; trust: string[] };
-
-const SAFE_PREFIXES = [
-  "ls",
-  "cat",
-  "echo",
-  "pwd",
-  "which",
-  "find",
-  "head",
-  "tail",
-  "wc",
-  "git log",
-  "git status",
-  "git diff",
-];
 
 export function createApproval(config: ApprovalConfig) {
   return ({ command }: { command: string }) => {
@@ -88,36 +66,41 @@ const run = async () => {
 
   await lifecycle.afterStart?.(sandbox);
 
-  const read = createReadTool(sandbox);
-  const grep = createGrepTool(sandbox);
-  const interactiveBash = createBashTool(
-    sandbox,
-    createApproval({ mode: "interactive" }),
-  );
-  const backgroundBash = createBashTool(
-    sandbox,
-    createApproval({ mode: "background" }),
-  );
-  const delegatedBash = createBashTool(
-    sandbox,
-    createApproval({ mode: "delegated", trust: SAFE_PREFIXES }),
-  );
-  const task = createTaskTool(sandbox, { read: read, grep: grep });
-  const askUser = createAskUserTool(sandbox);
-  const todo = createTodoTool();
-
   const skillDirs = [
     join(workingDir, "skills"),
     join(process.env.HOME ?? "", ".harness", "skills"),
   ];
   const skills = discoverSkills(skillDirs);
-  const loadSkillTool = createLoadSkillTool(skills);
+  const registry = createRegistry();
+  registerBuiltins(registry, sandbox, skills);
+
+  registry.register(
+    "now",
+    tool({
+      description: "Return the current timestamp",
+      inputSchema: z.object({}),
+      execute: async () => new Date().toISOString(),
+    }),
+  );
+
+  const baseBash = registry.get("bash")!;
+  registry.register(
+    "bash",
+    wrapTool(baseBash, {
+      beforeExecute: (input) => {
+        if (input.command.startsWith("bun test")) {
+          return { ...input, command: input.command + " --reporter=spec" };
+        }
+        return input;
+      },
+    }),
+  );
 
   const verifyCommands = await discoverGates(sandbox);
   const instructions = buildSystemPrompt({
     workingDirectory: workingDir,
     sandboxType: "local",
-    toolNames: Object.keys({ read, grep, backgroundBash }),
+    toolNames: registry.list(),
     projectContext,
     verifyCommands,
   });
@@ -125,7 +108,7 @@ const run = async () => {
   const agent = new ToolLoopAgent({
     model: deepseek(values.model!),
     instructions,
-    tools: { read, grep, backgroundBash, task, askUser, todo, loadSkillTool },
+    tools: Object.fromEntries(registry.entries()),
     stopWhen: stepCountIs(15),
     prepareCall: async (options) => {
       const pruned = options.messages
